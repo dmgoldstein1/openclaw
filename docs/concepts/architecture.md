@@ -7,7 +7,7 @@ title: "Gateway Architecture"
 
 # Gateway architecture
 
-Last updated: 2026-01-22
+Last updated: 2026-02-13
 
 ## Overview
 
@@ -20,6 +20,106 @@ Last updated: 2026-01-22
   declare `role: node` with explicit caps/commands.
 - One Gateway per host; it is the only place that opens a WhatsApp session.
 - A **canvas host** (default `18793`) serves agent‑editable HTML and A2UI.
+
+## System architecture diagram
+
+The following diagram shows the high-level architecture of OpenClaw, including
+the flow of a user message through the system:
+
+```mermaid
+flowchart TB
+    subgraph External["External Channels"]
+        WA[WhatsApp]
+        TG[Telegram]
+        DC[Discord]
+        SL[Slack]
+        SG[Signal]
+        IM[iMessage]
+    end
+
+    subgraph Gateway["Gateway (Daemon)"]
+        direction TB
+        ING[Ingress Handler]
+        RT[Router]
+        SM[Session Manager]
+        EGR[Egress Handler]
+    end
+
+    subgraph Brain["Brain (Agent Runtime)"]
+        direction TB
+        PI[pi-embedded Runner]
+        LLM[LLM Provider<br/>OpenAI / Anthropic / etc.]
+        TP[Tool Policy]
+    end
+
+    subgraph Sandbox["Sandbox (Docker)"]
+        direction TB
+        EXEC[Exec / Bash]
+        FS[File Operations]
+        BR[Browser Automation]
+    end
+
+    subgraph Skills["Skills & Tools"]
+        direction TB
+        SKILL[Workspace Skills]
+        BUND[Bundled Skills]
+        TOOLS[Core Tools<br/>read / edit / write]
+    end
+
+    subgraph Memory["Memory & Persistence"]
+        direction TB
+        JSONL[Session Transcripts<br/>JSONL]
+        SOUL[SOUL.md<br/>Persona]
+        AGENTS[AGENTS.md<br/>Instructions]
+        MEM[memory/*.md<br/>Daily Logs]
+        VS[Vector Search<br/>SQLite]
+    end
+
+    subgraph Clients["Control Clients"]
+        MAC[macOS App]
+        CLI[CLI]
+        WEB[WebChat]
+    end
+
+    %% External to Gateway (Ingress)
+    WA & TG & DC & SL & SG & IM --> ING
+    ING --> RT
+    RT --> SM
+    SM --> PI
+
+    %% Brain processing
+    PI <--> LLM
+    PI --> TP
+    TP --> SKILL & BUND & TOOLS
+
+    %% Sandbox execution
+    TP --> EXEC & FS & BR
+
+    %% Memory access
+    PI <--> JSONL
+    PI --> SOUL & AGENTS & MEM
+    PI <--> VS
+
+    %% Response flow (Egress)
+    PI --> SM
+    SM --> EGR
+    EGR --> WA & TG & DC & SL & SG & IM
+
+    %% Control clients
+    MAC & CLI & WEB <--> Gateway
+```
+
+### Message flow
+
+1. **Ingress**: User message arrives from an external channel (WhatsApp, Telegram, etc.) and is received by the Gateway ingress handler.
+2. **Routing**: The Router determines the target agent and session based on sender, channel, and allowlist rules.
+3. **Session Management**: The Session Manager loads or creates the session context, including history from JSONL transcripts.
+4. **Brain Processing**: The pi-embedded runner sends the message to the configured LLM provider, which generates a response with optional tool calls.
+5. **Tool Execution**: Tool calls are validated against the Tool Policy, then executed either directly (core tools) or in the Sandbox (Docker) for isolation.
+6. **Skills**: Workspace and bundled skills provide specialized capabilities (browser automation, file operations, custom workflows).
+7. **Memory**: The agent reads persona (SOUL.md), instructions (AGENTS.md), and memory files; session history is persisted to JSONL. Vector search enables semantic recall.
+8. **Response**: The generated response flows back through the Session Manager to the Egress handler.
+9. **Egress**: The Gateway delivers the response to the original channel.
 
 ## Components and flows
 
