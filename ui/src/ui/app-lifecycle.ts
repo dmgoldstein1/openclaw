@@ -19,6 +19,7 @@ import {
   syncTabWithLocation,
   syncThemeWithSettings,
 } from "./app-settings.ts";
+import { updateConfigFormValue, removeConfigFormValue } from "./controllers/config.ts";
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
 import type { Tab } from "./navigation.ts";
 
@@ -40,9 +41,96 @@ type LifecycleHost = {
   logsAtBottom: boolean;
   logsEntries: unknown[];
   configPollInterval?: number | null;
+  configForm: Record<string, unknown> | null;
   popStateHandler: () => void;
   topbarObserver: ResizeObserver | null;
 };
+
+/**
+ * Attach native event listeners to model select elements.
+ * This is a workaround for Lit @change bindings not rendering.
+ */
+function setupModelSelectEventListeners(host: LifecycleHost) {
+  const selects = document.querySelectorAll<HTMLSelectElement>('select[data-model-type="primary"]');
+
+  selects.forEach((select) => {
+    // Remove old listener if exists to prevent duplicates
+    const oldListener = (select as unknown as { __modelChangeListener?: EventListener })
+      .__modelChangeListener;
+    if (oldListener) {
+      select.removeEventListener("change", oldListener);
+    }
+
+    // Create and attach new listener
+    const listener: EventListener = (e: Event) => {
+      const target = e.target as HTMLSelectElement;
+      const agentId = target.getAttribute("data-agent-id");
+      const modelId = target.value || null;
+
+      if (!agentId) {
+        return;
+      }
+
+      // Directly update the config form (replicates onModelChange logic)
+      const state = host;
+      const configValue = state.configForm?.value;
+
+      if (!configValue) {
+        console.log("[setupModelSelectEventListeners] No configValue");
+        return;
+      }
+
+      const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+      if (!Array.isArray(list)) {
+        console.log("[setupModelSelectEventListeners] list is not an array");
+        return;
+      }
+
+      const index = list.findIndex(
+        (entry) =>
+          entry &&
+          typeof entry === "object" &&
+          "id" in entry &&
+          (entry as { id?: string }).id === agentId,
+      );
+
+      if (index < 0) {
+        console.log("[setupModelSelectEventListeners] Agent not found in list");
+        return;
+      }
+
+      const basePath = ["agents", "list", index, "model"];
+
+      if (!modelId) {
+        console.log("[setupModelSelectEventListeners] Removing model value");
+        removeConfigFormValue(state, basePath);
+        return;
+      }
+
+      const entry = list[index] as { model?: unknown };
+      const existing = entry?.model;
+
+      if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+        const fallbacks = (existing as { fallbacks?: unknown }).fallbacks;
+        const next = {
+          primary: modelId,
+          ...(Array.isArray(fallbacks) ? { fallbacks } : {}),
+        };
+        console.log("[setupModelSelectEventListeners] Updating with object:", next);
+        updateConfigFormValue(state, basePath, next);
+      } else {
+        console.log("[setupModelSelectEventListeners] Updating with string:", modelId);
+        updateConfigFormValue(state, basePath, modelId);
+      }
+
+      console.log("[setupModelSelectEventListeners] configFormDirty:", state.configFormDirty);
+    };
+
+    select.addEventListener("change", listener);
+    (select as unknown as { __modelChangeListener?: EventListener }).__modelChangeListener =
+      listener;
+  });
+}
 
 export function handleConnected(host: LifecycleHost) {
   host.basePath = inferBasePath();
@@ -113,9 +201,15 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
       setupConfigPollingPauseOnFormInteraction(
         host as unknown as Parameters<typeof setupConfigPollingPauseOnFormInteraction>[0],
       );
+      // Attach native event listeners to model selects (workaround for Lit @change not rendering)
+      setTimeout(() => setupModelSelectEventListeners(host), 0);
     } else {
       stopConfigPolling(host as unknown as Parameters<typeof stopConfigPolling>[0]);
     }
+  }
+  // Re-attach model select listeners when config form changes (agents tab only)
+  if (host.tab === "agents" && changed.has("configForm")) {
+    setTimeout(() => setupModelSelectEventListeners(host), 0);
   }
   if (
     host.tab === "logs" &&

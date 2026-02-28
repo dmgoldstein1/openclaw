@@ -450,7 +450,8 @@ function renderAgentOverview(params: {
           <label class="field" style="min-width: 260px; flex: 1;">
             <span>Primary model${isDefault ? " (default)" : ""}</span>
             <select
-              .value=${effectivePrimary ?? ""}
+              data-model-type="primary"
+              data-agent-id=${agent.id}
               ?disabled=${!configForm || configLoading || configSaving}
               @change=${(e: Event) =>
                 onModelChange(agent.id, (e.target as HTMLSelectElement).value || null)}

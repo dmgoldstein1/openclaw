@@ -360,7 +360,12 @@ export function buildModelOptions(
       opt.label.includes("(openai)"),
   );
   const sorted = [...configured, ...discovered];
-  return sorted.map((option) => html`<option value=${option.value}>${option.label}</option>`);
+  return sorted.map(
+    (option) =>
+      html`<option value=${option.value} ?selected=${option.value === current}>
+        ${option.label}
+      </option>`,
+  );
 }
 
 type CompiledPattern =

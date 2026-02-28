@@ -53,6 +53,7 @@ import {
 import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
+import { updateConfigFormValue, removeConfigFormValue } from "./controllers/config.ts";
 import type { CronFieldErrors } from "./controllers/cron.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
@@ -112,6 +113,7 @@ export class OpenClawApp extends LitElement {
   private i18nController = new I18nController(this);
   clientInstanceId = generateUUID();
   @state() settings: UiSettings = loadSettings();
+  private _boundModelChangeHandler: ((e: Event) => void) | null = null;
   constructor() {
     super();
     if (isSupportedLocale(this.settings.locale)) {
@@ -399,10 +401,19 @@ export class OpenClawApp extends LitElement {
   }
 
   protected firstUpdated() {
+    // Listen for custom model-change events (workaround for Lit @change not rendering)
+    // Store bound reference so we can properly remove it later
+    this._boundModelChangeHandler = this.handleModelChange.bind(this);
+    this.addEventListener("model-change", this._boundModelChangeHandler);
+    console.log("[DEBUG] Added model-change listener in firstUpdated");
     handleFirstUpdated(this as unknown as Parameters<typeof handleFirstUpdated>[0]);
   }
 
   disconnectedCallback() {
+    if (this._boundModelChangeHandler) {
+      this.removeEventListener("model-change", this._boundModelChangeHandler);
+      this._boundModelChangeHandler = null;
+    }
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     super.disconnectedCallback();
   }
@@ -575,6 +586,59 @@ export class OpenClawApp extends LitElement {
 
   handleGatewayUrlCancel() {
     this.pendingGatewayUrl = null;
+  }
+
+  // Model change handler (for workaround custom event from native listener)
+  handleModelChange(e: CustomEvent) {
+    const { agentId, modelId } = e.detail;
+    const configValue = this.configForm;
+    if (!configValue) {
+      return;
+    }
+    const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+    if (!Array.isArray(list)) {
+      return;
+    }
+    const index = list.findIndex(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        "id" in entry &&
+        (entry as { id?: string }).id === agentId,
+    );
+    if (index < 0) {
+      return;
+    }
+    const basePath = ["agents", "list", index, "model"];
+    if (!modelId) {
+      removeConfigFormValue(
+        this as unknown as Parameters<typeof removeConfigFormValue>[0],
+        basePath,
+      );
+      return;
+    }
+    const entry = list[index] as { model?: unknown };
+    const existing = entry?.model;
+    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+      const fallbacks = (existing as { fallbacks?: unknown }).fallbacks;
+      const next = {
+        primary: modelId,
+        ...(Array.isArray(fallbacks) ? { fallbacks } : {}),
+      };
+      updateConfigFormValue(
+        this as unknown as Parameters<typeof updateConfigFormValue>[0],
+        basePath,
+        next,
+      );
+    } else {
+      updateConfigFormValue(
+        this as unknown as Parameters<typeof updateConfigFormValue>[0],
+        basePath,
+        modelId,
+      );
+    }
+    // Manually trigger Lit update
+    this.requestUpdate();
   }
 
   // Sidebar handlers for tool output viewing
