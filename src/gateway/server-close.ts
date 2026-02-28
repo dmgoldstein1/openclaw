@@ -15,6 +15,7 @@ export function createGatewayCloseHandler(params: {
   pluginServices: PluginServicesHandle | null;
   cron: { stop: () => void };
   heartbeatRunner: HeartbeatRunner;
+  lmstudioRefreshService?: { stop: () => void };
   updateCheckStop?: (() => void) | null;
   nodePresenceTimers: Map<string, ReturnType<typeof setInterval>>;
   broadcast: (event: string, payload: unknown, opts?: { dropIfSlow?: boolean }) => void;
@@ -70,6 +71,7 @@ export function createGatewayCloseHandler(params: {
     }
     await stopGmailWatcher();
     params.cron.stop();
+    params.lmstudioRefreshService?.stop();
     params.heartbeatRunner.stop();
     try {
       params.updateCheckStop?.();

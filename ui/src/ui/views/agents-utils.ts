@@ -34,10 +34,22 @@ type AgentConfigEntry = {
   };
 };
 
+type ModelProviderEntry = {
+  id?: string;
+  name?: string;
+};
+
+type ModelProviderConfig = {
+  models?: ModelProviderEntry[];
+};
+
 type ConfigSnapshot = {
   agents?: {
     defaults?: { workspace?: string; model?: unknown; models?: Record<string, { alias?: string }> };
     list?: AgentConfigEntry[];
+  };
+  models?: {
+    providers?: Record<string, ModelProviderConfig | undefined>;
   };
   tools?: {
     profile?: string;
@@ -267,25 +279,54 @@ function resolveConfiguredModels(
   configForm: Record<string, unknown> | null,
 ): ConfiguredModelOption[] {
   const cfg = configForm as ConfigSnapshot | null;
-  const models = cfg?.agents?.defaults?.models;
-  if (!models || typeof models !== "object") {
-    return [];
-  }
+  const seen = new Set<string>();
   const options: ConfiguredModelOption[] = [];
-  for (const [modelId, modelRaw] of Object.entries(models)) {
-    const trimmed = modelId.trim();
-    if (!trimmed) {
-      continue;
+
+  // Add explicitly configured models from agents.defaults.models
+  const models = cfg?.agents?.defaults?.models;
+  if (models && typeof models === "object") {
+    for (const [modelId, modelRaw] of Object.entries(models)) {
+      const trimmed = modelId.trim();
+      if (!trimmed) {
+        continue;
+      }
+      seen.add(trimmed);
+      const alias =
+        modelRaw && typeof modelRaw === "object" && "alias" in modelRaw
+          ? typeof (modelRaw as { alias?: unknown }).alias === "string"
+            ? (modelRaw as { alias?: string }).alias?.trim()
+            : undefined
+          : undefined;
+      const label = alias && alias !== trimmed ? `${alias} (${trimmed})` : trimmed;
+      options.push({ value: trimmed, label });
     }
-    const alias =
-      modelRaw && typeof modelRaw === "object" && "alias" in modelRaw
-        ? typeof (modelRaw as { alias?: unknown }).alias === "string"
-          ? (modelRaw as { alias?: string }).alias?.trim()
-          : undefined
-        : undefined;
-    const label = alias && alias !== trimmed ? `${alias} (${trimmed})` : trimmed;
-    options.push({ value: trimmed, label });
   }
+
+  // Add auto-discovered models from providers (e.g., LM Studio)
+  const providers = cfg?.models?.providers;
+  if (providers && typeof providers === "object") {
+    for (const [providerName, providerCfg] of Object.entries(providers)) {
+      if (!providerCfg || !Array.isArray(providerCfg.models)) {
+        continue;
+      }
+      for (const modelEntry of providerCfg.models) {
+        if (!modelEntry || typeof modelEntry !== "object") {
+          continue;
+        }
+        const modelId = typeof modelEntry.id === "string" ? modelEntry.id.trim() : undefined;
+        if (!modelId || seen.has(modelId)) {
+          continue;
+        }
+        seen.add(modelId);
+        const modelName = typeof modelEntry.name === "string" ? modelEntry.name.trim() : undefined;
+        const label = modelName && modelName !== modelId ? `${modelName} (${modelId})` : modelId;
+        // Mark discovered models with provider prefix for clarity
+        const displayLabel = `${label} (${providerName})`;
+        options.push({ value: modelId, label: displayLabel });
+      }
+    }
+  }
+
   return options;
 }
 
@@ -300,10 +341,26 @@ export function buildModelOptions(
   }
   if (options.length === 0) {
     return html`
-      <option value="" disabled>No configured models</option>
+      <option value="" disabled>
+        No models available (configure agents.defaults.models or LM Studio)
+      </option>
     `;
   }
-  return options.map((option) => html`<option value=${option.value}>${option.label}</option>`);
+  // Sort: explicitly configured first, then discovered models
+  const configured = options.filter(
+    (opt) =>
+      !opt.label.includes("(lmstudio)") &&
+      !opt.label.includes("(vllm)") &&
+      !opt.label.includes("(openai)"),
+  );
+  const discovered = options.filter(
+    (opt) =>
+      opt.label.includes("(lmstudio)") ||
+      opt.label.includes("(vllm)") ||
+      opt.label.includes("(openai)"),
+  );
+  const sorted = [...configured, ...discovered];
+  return sorted.map((option) => html`<option value=${option.value}>${option.label}</option>`);
 }
 
 type CompiledPattern =

@@ -6,6 +6,9 @@ import {
   stopNodesPolling,
   startDebugPolling,
   stopDebugPolling,
+  startConfigPolling,
+  stopConfigPolling,
+  setupConfigPollingPauseOnFormInteraction,
 } from "./app-polling.ts";
 import { observeTopbar, scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
 import {
@@ -36,6 +39,7 @@ type LifecycleHost = {
   logsAutoFollow: boolean;
   logsAtBottom: boolean;
   logsEntries: unknown[];
+  configPollInterval?: number | null;
   popStateHandler: () => void;
   topbarObserver: ResizeObserver | null;
 };
@@ -53,6 +57,12 @@ export function handleConnected(host: LifecycleHost) {
   if (host.tab === "logs") {
     startLogsPolling(host as unknown as Parameters<typeof startLogsPolling>[0]);
   }
+  if (host.tab === "agents") {
+    startConfigPolling(host as unknown as Parameters<typeof startConfigPolling>[0]);
+    setupConfigPollingPauseOnFormInteraction(
+      host as unknown as Parameters<typeof setupConfigPollingPauseOnFormInteraction>[0],
+    );
+  }
   if (host.tab === "debug") {
     startDebugPolling(host as unknown as Parameters<typeof startDebugPolling>[0]);
   }
@@ -66,6 +76,7 @@ export function handleDisconnected(host: LifecycleHost) {
   window.removeEventListener("popstate", host.popStateHandler);
   stopNodesPolling(host as unknown as Parameters<typeof stopNodesPolling>[0]);
   stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
+  stopConfigPolling(host as unknown as Parameters<typeof stopConfigPolling>[0]);
   stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
   host.client?.stop();
   host.client = null;
@@ -94,6 +105,17 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
       host as unknown as Parameters<typeof scheduleChatScroll>[0],
       forcedByTab || forcedByLoad || !host.chatHasAutoScrolled,
     );
+  }
+  if (changed.has("tab")) {
+    // Handle config polling when switching to/from agents tab
+    if (host.tab === "agents") {
+      startConfigPolling(host as unknown as Parameters<typeof startConfigPolling>[0]);
+      setupConfigPollingPauseOnFormInteraction(
+        host as unknown as Parameters<typeof setupConfigPollingPauseOnFormInteraction>[0],
+      );
+    } else {
+      stopConfigPolling(host as unknown as Parameters<typeof stopConfigPolling>[0]);
+    }
   }
   if (
     host.tab === "logs" &&

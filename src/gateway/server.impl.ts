@@ -64,6 +64,7 @@ import {
   type GatewayUpdateAvailableEventPayload,
 } from "./events.js";
 import { ExecApprovalManager } from "./exec-approval-manager.js";
+import { createLmstudioRefreshService } from "./lmstudio-refresh.js";
 import { NodeRegistry } from "./node-registry.js";
 import type { startBrowserControlServerIfEnabled } from "./server-browser.js";
 import { createChannelManager } from "./server-channels.js";
@@ -544,6 +545,11 @@ export async function startGatewayServer(
   });
   let { cron, storePath: cronStorePath } = cronState;
 
+  // Start LM Studio periodic model discovery (every 10 seconds when not in use)
+  const lmstudioRefreshService = !minimalTestGateway
+    ? createLmstudioRefreshService()
+    : { start: () => {}, stop: () => {} };
+
   const channelManager = createChannelManager({
     loadConfig,
     channelLogs,
@@ -656,6 +662,7 @@ export async function startGatewayServer(
 
   if (!minimalTestGateway) {
     void cron.start().catch((err) => logCron.error(`failed to start: ${String(err)}`));
+    lmstudioRefreshService.start();
   }
 
   // Recover pending outbound deliveries from previous crash/restart.
@@ -892,6 +899,7 @@ export async function startGatewayServer(
     pluginServices,
     cron,
     heartbeatRunner,
+    lmstudioRefreshService,
     updateCheckStop: stopGatewayUpdateCheck,
     nodePresenceTimers,
     broadcast,
