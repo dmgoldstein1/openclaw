@@ -59,9 +59,29 @@ export function resolveModel(
     const providers = cfg?.models?.providers ?? {};
     const inlineModels = buildInlineProviderModels(providers);
     const normalizedProvider = normalizeProviderId(provider);
-    const inlineMatch = inlineModels.find(
+
+    // Try standard match: provider matches and modelId matches
+    let inlineMatch = inlineModels.find(
       (entry) => normalizeProviderId(entry.provider) === normalizedProvider && entry.id === modelId,
     );
+
+    // If no match, try matching slash-separated model IDs that might have different provider prefixes
+    // E.g., config has model "qwen/qwen3-coder-next" but it's stored as normalized "qwen-portal/qwen3-coder-next"
+    // in the normalized form. We need to find the original "qwen/qwen3-coder-next" ID.
+    if (!inlineMatch) {
+      // Check if the model exists in inline models with a different (non-normalized) provider prefix
+      // For example, if looking for provider="qwen-portal", check for id="qwen/qwen3-coder-next"
+      // by trying to find any model where the suffix matches modelId and the prefix normalizes to our provider
+      inlineMatch = inlineModels.find((entry) => {
+        if (!entry.id.includes("/")) {
+          return false;
+        }
+        const [entryPrefix, entrySuffix] = entry.id.split("/", 2);
+        const entryPrefixNormalized = normalizeProviderId(entryPrefix);
+        return entrySuffix === modelId && entryPrefixNormalized === normalizedProvider;
+      });
+    }
+
     if (inlineMatch) {
       const normalized = normalizeModelCompat(inlineMatch as Model<Api>);
       return {

@@ -474,8 +474,9 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         verboseLevel: entry?.verboseLevel,
         reasoningLevel: entry?.reasoningLevel,
         responseUsage: entry?.responseUsage,
-        model: entry?.model,
-        modelProvider: entry?.modelProvider,
+        // Do not carry over old model/modelProvider on reset;
+        // instead the session will resolve to the current configured model.
+        // This allows config changes to take effect on the next /new or /reset.
         contextTokens: entry?.contextTokens,
         sendPolicy: entry?.sendPolicy,
         label: entry?.label,

@@ -1397,4 +1397,8 @@ export async function writeConfigFile(
     envSnapshotForRestore: sameConfigPath ? options.envSnapshotForRestore : undefined,
     unsetPaths: options.unsetPaths,
   });
+  // Clear the runtime config snapshot after writing so subsequent loads
+  // will read the updated config from disk, not a stale in-memory snapshot.
+  // This fix ensures config changes (e.g., model selection in the GUI) take effect immediately.
+  clearRuntimeConfigSnapshot();
 }

@@ -27,6 +27,7 @@ import {
 } from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
 import { loadOpenClawPlugins } from "../../plugins/loader.js";
+import { clearSecretsRuntimeSnapshot } from "../../secrets/runtime.js";
 import { diffConfigPaths } from "../config-reload.js";
 import {
   formatControlPlaneActor,
@@ -271,6 +272,9 @@ export const configHandlers: GatewayRequestHandlers = {
       return;
     }
     await writeConfigFile(parsed.config, writeOptions);
+    // Clear secrets runtime snapshot so subsequent config reads will use the updated config.
+    // This ensures config changes (e.g., model selection) take effect immediately without restart.
+    clearSecretsRuntimeSnapshot();
     respond(
       true,
       {
@@ -361,6 +365,9 @@ export const configHandlers: GatewayRequestHandlers = {
       `config.patch write ${formatControlPlaneActor(actor)} changedPaths=${summarizeChangedPaths(changedPaths)} restartReason=config.patch`,
     );
     await writeConfigFile(validated.config, writeOptions);
+    // Clear secrets runtime snapshot so subsequent config reads will use the updated config.
+    // This ensures config changes take effect immediately without restart.
+    clearSecretsRuntimeSnapshot();
 
     const { sessionKey, note, restartDelayMs, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
@@ -421,6 +428,9 @@ export const configHandlers: GatewayRequestHandlers = {
       `config.apply write ${formatControlPlaneActor(actor)} changedPaths=${summarizeChangedPaths(changedPaths)} restartReason=config.apply`,
     );
     await writeConfigFile(parsed.config, writeOptions);
+    // Clear secrets runtime snapshot so subsequent config reads will use the updated config.
+    // This ensures config changes take effect immediately without restart.
+    clearSecretsRuntimeSnapshot();
 
     const { sessionKey, note, restartDelayMs, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
