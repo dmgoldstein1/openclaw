@@ -163,6 +163,7 @@ export OPENCLAW_WORKSPACE_DIR
 export OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 export OPENCLAW_BRIDGE_PORT="${OPENCLAW_BRIDGE_PORT:-18790}"
 export OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-lan}"
+export OPENCLAW_HOST_CHROME_CDP_PORT="${OPENCLAW_HOST_CHROME_CDP_PORT:-19222}"
 export OPENCLAW_IMAGE="$IMAGE_NAME"
 export OPENCLAW_DOCKER_APT_PACKAGES="${OPENCLAW_DOCKER_APT_PACKAGES:-}"
 export OPENCLAW_EXTRA_MOUNTS="$EXTRA_MOUNTS"
@@ -317,6 +318,7 @@ upsert_env "$ENV_FILE" \
   OPENCLAW_GATEWAY_PORT \
   OPENCLAW_BRIDGE_PORT \
   OPENCLAW_GATEWAY_BIND \
+  OPENCLAW_HOST_CHROME_CDP_PORT \
   OPENCLAW_GATEWAY_TOKEN \
   OPENCLAW_IMAGE \
   OPENCLAW_EXTRA_MOUNTS \
@@ -352,6 +354,19 @@ docker compose "${COMPOSE_ARGS[@]}" run --rm openclaw-cli onboard --no-install-d
 echo ""
 echo "==> Control UI origin allowlist"
 ensure_control_ui_allowed_origins
+
+echo ""
+echo "==> Browser profile setup (host macOS Chrome via CDP)"
+HOST_CHROME_CDP_URL="http://host.docker.internal:${OPENCLAW_HOST_CHROME_CDP_PORT}"
+docker compose "${COMPOSE_ARGS[@]}" run --rm openclaw-cli \
+  config set browser.enabled true --strict-json >/dev/null
+docker compose "${COMPOSE_ARGS[@]}" run --rm openclaw-cli \
+  config set browser.profiles.macHostChrome "{\"cdpUrl\":\"${HOST_CHROME_CDP_URL}\",\"attachOnly\":true}" --strict-json >/dev/null
+docker compose "${COMPOSE_ARGS[@]}" run --rm openclaw-cli \
+  config set browser.defaultProfile '"macHostChrome"' --strict-json >/dev/null
+echo "Configured browser.defaultProfile=macHostChrome (CDP: ${HOST_CHROME_CDP_URL})"
+echo "Start host Chrome with:"
+echo "  /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=${OPENCLAW_HOST_CHROME_CDP_PORT} --remote-debugging-address=0.0.0.0 --user-data-dir=\"$HOME/.openclaw-chrome\" --no-first-run --no-default-browser-check"
 
 echo ""
 echo "==> Provider setup (optional)"

@@ -43,6 +43,7 @@ This script:
 
 - builds the gateway image
 - runs the onboarding wizard
+- configures browser control to use a host macOS Chrome CDP profile (`macHostChrome`) via `host.docker.internal`
 - prints optional provider setup hints
 - starts the gateway via Docker Compose
 - generates a gateway token and writes it to `.env`
@@ -52,6 +53,10 @@ Optional env vars:
 - `OPENCLAW_DOCKER_APT_PACKAGES` — install extra apt packages during build
 - `OPENCLAW_EXTRA_MOUNTS` — add extra host bind mounts
 - `OPENCLAW_HOME_VOLUME` — persist `/home/node` in a named volume
+- `OPENCLAW_HOST_CHROME_CDP_PORT` — host Chrome CDP port (default `19222`)
+
+The default host Chrome CDP port is intentionally `19222` (not `9222`) to reduce
+conflicts with Chrome MCP servers and other local Chrome instances.
 
 After it finishes:
 
@@ -91,6 +96,23 @@ docker build -t openclaw:local -f Dockerfile .
 docker compose run --rm openclaw-cli onboard
 docker compose up -d openclaw-gateway
 ```
+
+### Host macOS Chrome CDP (outside Docker)
+
+`docker-setup.sh` configures OpenClaw browser defaults to use:
+
+- `browser.defaultProfile = "macHostChrome"`
+- `browser.profiles.macHostChrome.cdpUrl = "http://host.docker.internal:19222"` (or your `OPENCLAW_HOST_CHROME_CDP_PORT`)
+- `browser.profiles.macHostChrome.attachOnly = true`
+
+Start a separate host Chrome instance with CDP enabled on the same port:
+
+```bash
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=19222 --remote-debugging-address=0.0.0.0 --user-data-dir="$HOME/.openclaw-chrome" --no-first-run --no-default-browser-check
+```
+
+If you change the port, set `OPENCLAW_HOST_CHROME_CDP_PORT` before running
+`./docker-setup.sh` and start Chrome with that same port.
 
 Note: run `docker compose ...` from the repo root. If you enabled
 `OPENCLAW_EXTRA_MOUNTS` or `OPENCLAW_HOME_VOLUME`, the setup script writes
